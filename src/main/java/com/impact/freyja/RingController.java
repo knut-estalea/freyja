@@ -1,5 +1,6 @@
 package com.impact.freyja;
 
+import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import org.springframework.http.HttpStatus;
@@ -28,6 +29,12 @@ public class RingController {
     @ResponseStatus(HttpStatus.CREATED)
     public Node addNode(@RequestBody AddNodeRequest request) {
         return ringService.addNode(request.id(), request.host(), request.port());
+    }
+
+    @GetMapping("/nodes")
+    @ResponseStatus(HttpStatus.OK)
+    public List<Node> listNodes() {
+        return ringService.sortedNodes();
     }
 
     @DeleteMapping("/nodes/{id}")

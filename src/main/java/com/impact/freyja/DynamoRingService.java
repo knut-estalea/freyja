@@ -86,7 +86,7 @@ public class DynamoRingService {
         return hash;
     }
 
-    private List<Node> sortedNodes() {
+    public List<Node> sortedNodes() {
         return nodesById.values().stream()
                 .sorted(Comparator.comparingLong(Node::token).thenComparing(Node::id))
                 .toList();
