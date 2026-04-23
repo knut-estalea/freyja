@@ -1,3 +1,6 @@
 /.gradle
 /.idea
 /build/
+
+# tools/load-gen subproject
+tools/load-gen/build/
