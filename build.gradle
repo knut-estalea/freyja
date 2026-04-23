@@ -8,3 +8,11 @@ group = 'com.impact'
 version = '0.0.1-SNAPSHOT'
 description = 'Hackathon submission for tech summit 2026'
 
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+}
