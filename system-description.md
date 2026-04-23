@@ -191,3 +191,35 @@ Client
                 dup counter  • Increment new counter
                              • Log request
 ```
+
+
+---
+
+### Node Failure Simulation
+
+To test failure-handling behavior without removing nodes from the ring, each node carries a mutable **alive** status flag. A node that is marked as "not alive" remains in the ring topology but is treated as unreachable by the key-routing logic, simulating a crash or network partition.
+
+#### Status Flag
+
+The `Node` record is extended (or wrapped) with a boolean `alive` field that defaults to `true`. The `DynamoRingService` maintains this flag per node.
+
+#### REST API
+
+Two new endpoints are added under `/ring/nodes/{id}`:
+
+| Method | Path | Effect |
+|--------|------|--------|
+| `POST` | `/ring/nodes/{id}/fail` | Sets the node's `alive` flag to `false` |
+| `POST` | `/ring/nodes/{id}/recover` | Sets the node's `alive` flag back to `true` |
+
+Both return the updated node representation (including the current `alive` value).
+
+#### Routing Behavior
+
+When `locate()` builds the preference list for a key, it skips any node whose `alive` flag is `false`. If the primary node is down, the next alive node in ring order becomes the effective primary. If **no** alive node exists in the preference list, `locate()` throws an exception (fail-closed).
+
+#### Interaction with Existing Features
+
+- **`snapshot()`** continues to return all nodes regardless of status, but each node's `alive` flag is visible in the response so operators can see the full topology and its health.
+- **`reconcileNodes()`** resets incoming nodes to `alive = true` by default; nodes that were previously marked as failed and are still present in the reconciled list regain alive status.
+- **`removeNode()`** is unchanged — it physically removes a node from the ring, which is a separate concern from simulated failure.
