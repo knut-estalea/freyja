@@ -1,0 +1,3 @@
+rootProject.name = 'freyja'
+
+include 'tools:load-gen'

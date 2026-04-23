@@ -1,0 +1,34 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group = 'com.impact.freyja'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'info.picocli:picocli:4.7.6'
+    annotationProcessor 'info.picocli:picocli-codegen:4.7.6'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.18.2'
+}
+
+application {
+    mainClass = 'com.impact.freyja.loadgen.Main'
+}
+
+tasks.named('run') {
+    // Allow passing CLI args via -Pargs="--rate 50 --duration 10s ..."
+    if (project.hasProperty('args')) {
+        args(project.property('args').toString().split('\\s+'))
+    }
+}
