@@ -7,7 +7,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
 @EnableScheduling
-@EnableConfigurationProperties(RingProperties.class)
+@EnableConfigurationProperties({RingProperties.class, NodeIdentityProperties.class})
 class Main {
 
     public static void main(String[] args) {

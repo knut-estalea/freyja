@@ -14,13 +14,30 @@ The idea is the tracking server instances in a region form a group where they ha
 - Preference list generation using configurable replication factor
 - Optional periodic node sync from a remote URL
 - HTTP endpoints for quick manual testing
+- **Duplicate-request detection** with a 60s sliding duplicate window and a 300s cache TTL
+- **Cluster routing**: `/request` derives a key, locates the owner via the ring, and forwards over HTTP if remote
+- **Failure simulation**: each node carries an `alive` flag; dead nodes are skipped during routing
+- **Metrics**: `requests.duplicate` and `requests.new` counters via Micrometer / Spring Boot Actuator
 
 ## Endpoints
 
-- `POST /ring/nodes` - add node
-- `DELETE /ring/nodes/{id}` - remove node
-- `GET /ring` - list ring nodes (sorted by token)
-- `GET /ring/locate?key=...` - resolve key to primary + preference list
+### Public
+
+- `GET /request?session=<alphanumeric>&program=<int>` — classify a request as `NEW` or `DUPLICATE`
+- `GET /actuator/metrics/requests.duplicate` (and `requests.new`) — counter values
+
+### Ring management
+
+- `POST /ring/nodes` — add node
+- `DELETE /ring/nodes/{id}` — remove node
+- `POST /ring/nodes/{id}/fail` — simulate node failure (sets `alive=false`)
+- `POST /ring/nodes/{id}/recover` — recover a failed node (sets `alive=true`)
+- `GET /ring` — list ring nodes (sorted by token)
+- `GET /ring/locate?key=...` — resolve key to primary + preference list
+
+### Internal (node-to-node)
+
+- `POST /internal/classify` — body `{"key": "..."}`; processes locally without re-forwarding
 
 ### Example request
 
@@ -43,6 +60,15 @@ freyja.ring.replication-factor=3
 freyja.ring.sync-enabled=false
 freyja.ring.nodes-url=
 freyja.ring.sync-interval-ms=30000
+
+# Self-identity (optional overrides; sensible defaults derived from server.port)
+#freyja.node.id=
+#freyja.node.host=
+#freyja.node.port=
+freyja.node.self-register=true
+
+# Cache eviction sweep cadence; the 300s entry TTL itself is fixed by the spec.
+freyja.cache.sweep-interval-ms=30000
 ```
 
 When sync is enabled, the app periodically GETs `freyja.ring.nodes-url` and reconciles local membership to exactly match the remote list.
