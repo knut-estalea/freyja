@@ -25,9 +25,17 @@ public class DynamoRingService {
 
     public Node addNode(String id, String host, int port) {
         long token = hash(id + "@" + host + ":" + port);
-        Node node = new Node(id, host, port, token);
+        Node node = new Node(id, host, port, token, true);
         nodesById.put(id, node);
         return node;
+    }
+
+    public Node setAlive(String id, boolean alive) {
+        Node updated = nodesById.computeIfPresent(id, (k, existing) -> existing.withAlive(alive));
+        if (updated == null) {
+            throw new NoSuchElementException("Node not found: " + id);
+        }
+        return updated;
     }
 
     public Node removeNode(String id) {
@@ -60,8 +68,11 @@ public class DynamoRingService {
 
         long keyHash = hash(key);
         int primaryIndex = findPrimaryIndex(ordered, keyHash);
-        Node primary = ordered.get(primaryIndex);
         List<Node> preferenceList = buildPreferenceList(ordered, primaryIndex);
+        if (preferenceList.isEmpty()) {
+            throw new NoSuchElementException("No alive nodes available for key: " + key);
+        }
+        Node primary = preferenceList.getFirst();
         return new KeyLookupResult(key, keyHash, primary, preferenceList);
     }
 
@@ -101,7 +112,10 @@ public class DynamoRingService {
         LinkedHashSet<Node> preference = new LinkedHashSet<>();
         for (int i = 0; i < ordered.size() && preference.size() < target; i++) {
             int idx = (primaryIndex + i) % ordered.size();
-            preference.add(ordered.get(idx));
+            Node candidate = ordered.get(idx);
+            if (candidate.alive()) {
+                preference.add(candidate);
+            }
         }
         return new ArrayList<>(preference);
     }

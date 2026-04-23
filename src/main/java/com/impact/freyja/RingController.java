@@ -35,6 +35,16 @@ public class RingController {
         return ringService.removeNode(id);
     }
 
+    @PostMapping("/nodes/{id}/fail")
+    public Node failNode(@PathVariable String id) {
+        return ringService.setAlive(id, false);
+    }
+
+    @PostMapping("/nodes/{id}/recover")
+    public Node recoverNode(@PathVariable String id) {
+        return ringService.setAlive(id, true);
+    }
+
     @GetMapping
     public RingSnapshot getRing() {
         return ringService.snapshot();
