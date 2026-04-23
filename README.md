@@ -51,6 +51,16 @@ The idea is the tracking server instances in a region form a group where they ha
 }
 ```
 
+## Cluster status UI
+
+Every node serves a small status page at its root URL — open
+`http://<any-node-host>:<port>/` in a browser. The page (Alpine.js,
+no build step) calls `/ring` on the node you opened to discover the
+cluster, then fans out from your browser to each node's
+`/actuator/metrics/requests.new` and `/actuator/metrics/requests.duplicate`
+to show per-node and cluster-wide request and duplicate counts. It
+auto-refreshes every couple of seconds.
+
 ## Configuration
 
 `src/main/resources/application.properties`

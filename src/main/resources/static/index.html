@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Freyja Cluster Status</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2028;
+      --border: #2a3441;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --green: #3fb950;
+      --red: #f85149;
+      --amber: #d29922;
+      --accent: #58a6ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 24px;
+    }
+    h1 {
+      margin: 0 0 4px;
+      font-size: 22px;
+      font-weight: 600;
+    }
+    .sub {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 20px;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+    }
+    .controls label { font-size: 13px; color: var(--muted); }
+    .controls input[type=text], .controls input[type=number] {
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-family: inherit;
+      font-size: 13px;
+    }
+    .controls input[type=text] { width: 280px; }
+    .controls input[type=number] { width: 60px; }
+    .controls button {
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      border-radius: 4px;
+      padding: 5px 12px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .totals {
+      display: flex;
+      gap: 32px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 16px;
+    }
+    .totals .stat { display: flex; flex-direction: column; }
+    .totals .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .totals .value { font-size: 24px; font-weight: 600; margin-top: 2px; }
+    .v-new { color: var(--green); }
+    .v-dup { color: var(--red); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      text-align: left;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    th {
+      background: #232c36;
+      color: var(--muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 0.5px;
+    }
+    tr:last-child td { border-bottom: none; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+    .dot.alive { background: var(--green); }
+    .dot.dead  { background: var(--red); }
+    .dot.unreachable { background: var(--amber); }
+    .status-text { font-size: 12px; color: var(--muted); }
+    .err {
+      color: var(--red);
+      font-size: 12px;
+      margin-top: 8px;
+    }
+    .footer {
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: 12px;
+    }
+  </style>
+</head>
+<body x-data="dashboard()" x-init="init()">
+
+<h1>Freyja Cluster Status</h1>
+<div class="sub">Per-node request counters aggregated server-side via <code>/cluster/status</code>.</div>
+
+<div class="controls">
+  <label>Refresh every</label>
+  <input type="number" min="1" max="60" x-model.number="intervalSec" @change="restartTimer()">
+  <label>seconds</label>
+  <label><input type="checkbox" x-model="autoRefresh" @change="restartTimer()"> auto-refresh</label>
+  <button @click="refresh()">Refresh now</button>
+  <span class="status-text" x-text="lastUpdated ? 'updated ' + lastUpdated : ''"></span>
+</div>
+
+<template x-if="topologyError">
+  <div class="err" x-text="topologyError"></div>
+</template>
+
+<div class="totals">
+  <div class="stat"><span class="label">NEW</span><span class="value v-new" x-text="totals.new.toLocaleString()"></span></div>
+  <div class="stat"><span class="label">DUPLICATE</span><span class="value v-dup" x-text="totals.dup.toLocaleString()"></span></div>
+  <div class="stat"><span class="label">Total requests</span><span class="value" x-text="(totals.new + totals.dup).toLocaleString()"></span></div>
+  <div class="stat"><span class="label">Nodes</span><span class="value" x-text="nodes.length"></span></div>
+  <div class="stat"><span class="label">Dead</span><span class="value" x-text="nodes.filter(n => !n.alive).length"></span></div>
+  <div class="stat"><span class="label">Unreachable</span><span class="value" x-text="nodes.filter(n => n.unreachable).length"></span></div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Node</th>
+      <th>Endpoint</th>
+      <th>Status</th>
+      <th class="num">NEW</th>
+      <th class="num">DUPLICATE</th>
+      <th class="num">Total</th>
+      <th class="num">Dup %</th>
+    </tr>
+  </thead>
+  <tbody>
+    <template x-for="n in nodes" :key="n.id">
+      <tr>
+        <td x-text="n.id"></td>
+        <td><code x-text="n.host + ':' + n.port"></code></td>
+        <td>
+          <span class="dot" :class="n.unreachable ? 'unreachable' : (n.alive ? 'alive' : 'dead')"></span>
+          <span class="status-text" x-text="n.unreachable ? 'unreachable' : (n.alive ? 'alive' : 'failed')"></span>
+        </td>
+        <td class="num" x-text="n.unreachable ? '—' : n.newCount.toLocaleString()"></td>
+        <td class="num" x-text="n.unreachable ? '—' : n.dupCount.toLocaleString()"></td>
+        <td class="num" x-text="n.unreachable ? '—' : (n.newCount + n.dupCount).toLocaleString()"></td>
+        <td class="num" x-text="n.unreachable ? '—' : dupPct(n)"></td>
+      </tr>
+    </template>
+    <template x-if="nodes.length === 0 && !topologyError">
+      <tr><td colspan="7" style="text-align: center; color: var(--muted); padding: 24px;">No nodes known yet…</td></tr>
+    </template>
+  </tbody>
+</table>
+
+<div class="footer">
+  This page calls <code>/cluster/status</code> on the serving node, which fans out to every peer's
+  <code>/actuator/metrics/requests.new</code> and <code>/actuator/metrics/requests.duplicate</code> and aggregates the results.
+  Status colors: <span style="color: var(--green)">alive</span>,
+  <span style="color: var(--red)">failed (alive=false in ring)</span>,
+  <span style="color: var(--amber)">unreachable (peer fetch failed)</span>.
+</div>
+
+<script>
+function dashboard() {
+  return {
+    intervalSec: 2,
+    autoRefresh: true,
+    nodes: [],
+    totals: { new: 0, dup: 0 },
+    topologyError: '',
+    lastUpdated: '',
+    _timer: null,
+
+    init() {
+      this.refresh();
+      this.restartTimer();
+    },
+
+    restartTimer() {
+      if (this._timer) clearInterval(this._timer);
+      if (this.autoRefresh) {
+        const ms = Math.max(1, this.intervalSec) * 1000;
+        this._timer = setInterval(() => this.refresh(), ms);
+      }
+    },
+
+    async refresh() {
+      try {
+        const res = await fetch('/cluster/status');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const body = await res.json();
+        this.topologyError = '';
+        this.nodes = (body.nodes || []).map(n => ({
+          id: n.id,
+          host: n.host,
+          port: n.port,
+          alive: n.alive,
+          self: n.self,
+          unreachable: n.unreachable,
+          newCount: n.newCount || 0,
+          dupCount: n.dupCount || 0
+        }));
+        const t = body.totals || { newCount: 0, dupCount: 0 };
+        this.totals = { new: t.newCount, dup: t.dupCount };
+        this.lastUpdated = new Date().toLocaleTimeString();
+      } catch (e) {
+        this.topologyError = 'Could not fetch /cluster/status: ' + e.message;
+      }
+    },
+
+    dupPct(n) {
+      const total = n.newCount + n.dupCount;
+      if (total === 0) return '0%';
+      return ((n.dupCount / total) * 100).toFixed(1) + '%';
+    }
+  };
+}
+</script>
+</body>
+</html>
