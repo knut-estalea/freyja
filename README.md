@@ -8,6 +8,7 @@ This project now includes a minimal in-memory Dynamo-style consistent hashing ri
 - Deterministic token generation per node (`id@host:port`)
 - Key lookup to primary owner with ring wrap-around
 - Preference list generation using configurable replication factor
+- Optional periodic node sync from a remote URL
 - HTTP endpoints for quick manual testing
 
 ## Endpoints
@@ -35,6 +36,20 @@ This project now includes a minimal in-memory Dynamo-style consistent hashing ri
 
 ```properties
 freyja.ring.replication-factor=3
+freyja.ring.sync-enabled=false
+freyja.ring.nodes-url=
+freyja.ring.sync-interval-ms=30000
+```
+
+When sync is enabled, the app periodically GETs `freyja.ring.nodes-url` and reconciles local membership to exactly match the remote list.
+
+Expected remote payload:
+
+```json
+[
+  { "id": "n1", "host": "10.0.0.1", "port": 9001 },
+  { "id": "n2", "host": "10.0.0.2", "port": 9001 }
+]
 ```
 
 ## Notes / limitations
@@ -42,4 +57,4 @@ freyja.ring.replication-factor=3
 - Single process and in-memory only (no gossip, no persistence)
 - Single token per node (no virtual nodes yet)
 - No hinted handoff, quorum (`R/W`), or failure detector yet
-
+- Sync fetch failures are logged and retried at next interval

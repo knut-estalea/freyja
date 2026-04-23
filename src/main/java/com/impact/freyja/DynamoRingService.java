@@ -7,6 +7,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -35,6 +36,16 @@ public class DynamoRingService {
             throw new NoSuchElementException("Node not found: " + id);
         }
         return removed;
+    }
+
+    public synchronized void reconcileNodes(List<RingController.AddNodeRequest> incoming) {
+        Set<String> desiredIds = ConcurrentHashMap.newKeySet();
+        for (RingController.AddNodeRequest node : incoming) {
+            desiredIds.add(node.id());
+            addNode(node.id(), node.host(), node.port());
+        }
+
+        nodesById.keySet().removeIf(existingId -> !desiredIds.contains(existingId));
     }
 
     public RingSnapshot snapshot() {
