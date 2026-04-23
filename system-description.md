@@ -78,50 +78,77 @@ When a request is classified as **not a duplicate**, it is logged via applicatio
 
 ### Ring Architecture
 
-Each application instance is simultaneously an HTTP endpoint and a ring node. The cluster of instances forms a ring that partitions the keyspace. Each node owns one or more **segments (spaces)** of the ring and can hand off segments during topology changes. Replication is performed across adjacent nodes so that more than one node holds data for a given key range.
+Each application instance is simultaneously an HTTP endpoint and a ring node. The cluster of instances forms a Dynamo-style consistent-hash ring that partitions the keyspace. Each node owns the arc of the ring between its predecessor's token (exclusive) and its own token (inclusive), with wrap-around at the top of the keyspace.
 
-The following details are **TBD**:
+**Implemented in this repo (`com.impact.freyja.DynamoRingService`):**
 
-- **Hash function** used to map keys onto the ring (e.g., murmur3, SHA-256)
-- **Number of virtual nodes / segments per instance**
-- **Replication factor** (how many adjacent nodes hold replicas)
-- **Whether replication is synchronous or asynchronous**
+- **Hash function:** 64-bit **FNV-1a** over the UTF-8 bytes of the input. The same function is used both for token assignment and for hashing request keys.
+- **Tokens:** **One token per node** (no virtual nodes). Each node's token is `hash("<id>@<host>:<port>")`, making token assignment deterministic from node identity.
+- **Primary owner:** For a given key, the primary owner is the node whose token is the smallest token `>=` the key's hash, wrapping around to the lowest-token node if no such node exists.
+- **Replication factor:** Configurable via `freyja.ring.replication-factor` (default `3`).
+- **Preference list:** Primary owner plus the next `RF − 1` nodes walking clockwise around the ring (with wrap-around). If `RF` exceeds the number of nodes, the preference list is capped at the ring size.
+
+**Still open / TBD:**
+
+- **Synchronous vs asynchronous replication.** The current code computes a preference list but does **not** actually replicate writes to it; only the primary owner holds the entry. Whether replicas should be written sync, async, or at all for the PoC is undecided.
+- **Virtual nodes.** Single-token-per-node will produce uneven keyspace distribution. Adding vnodes is deferred.
+- **Segment handoff on topology change.** Membership reconciliation swaps the node set but does not migrate cache entries; entries on a departing node are simply lost and lazily re-learned via TTL expiry on the new owner.
 
 ---
 
 ### Topology Discovery
 
-Each node periodically polls a **hardcoded configuration endpoint** to discover or update its understanding of the ring topology. The details of this mechanism are **TBD**:
+Each node periodically polls a **hardcoded configuration endpoint** (`freyja.ring.nodes-url`) over HTTP to discover the authoritative ring membership. Behavior is implemented in `RingNodeSyncJob`:
 
-- Schema/format of the configuration response
-- Polling interval
-- How changes in topology trigger segment handoff
+- **Trigger:** Spring `@Scheduled` task running at fixed delay `freyja.ring.sync-interval-ms` (default `30000` ms).
+- **Enable flag:** `freyja.ring.sync-enabled` (default `false`); when disabled, membership is managed only via the manual `POST/DELETE /ring/nodes` endpoints.
+- **Response schema:** JSON array of node descriptors:
+  ```json
+  [
+    { "id": "n1", "host": "10.0.0.1", "port": 9001 },
+    { "id": "n2", "host": "10.0.0.2", "port": 9001 }
+  ]
+  ```
+- **Reconciliation strategy:** Full replace. After each successful fetch, local membership is forced to **exactly match** the remote list — nodes in the response are added (re-adding an existing id refreshes its host/port/token), and any local node not in the response is removed.
+- **Failure mode:** Fetch errors (network failure, malformed body, missing URL) are logged at WARN level and the next scheduled tick retries. The previously known membership remains in effect until a successful fetch replaces it.
+
+**Still open / TBD:**
+
+- **Source of the node list.** No component in this repo publishes the node list; it is assumed to be served by an external control plane or static file. Whether instances self-register at startup (e.g., POST themselves to the control plane) or whether the list is curated entirely out-of-band is undecided.
+- **Segment handoff coordination.** Topology changes are applied immediately on the next sync tick, with no coordinated handoff of cached entries.
 
 ---
 
 ### Inter-Node Communication
 
-When a node receives a request whose key belongs to a different node's keyspace, it must forward the lookup to the owning node. The protocol and format for this communication are **TBD**:
+When a node receives a request whose key belongs to a different node's keyspace, it must forward the lookup to the owning node. Today the project includes the ring math (`DynamoRingService.locate`) needed to identify the owner, but the actual node-to-node lookup call is **not yet implemented**.
 
-- Protocol (REST/HTTP, gRPC, etc.)
-- Request/response schema
-- Timeout and retry behavior
+**Implied direction (from existing code):** Spring's `RestClient` is already used for topology sync, so REST/HTTP over the same `host:port` carried in `Node` is the natural transport.
+
+**Still open / TBD:**
+
+- Endpoint path, HTTP method, and request/response schema for a remote lookup
+- Timeout and retry policy
+- Whether the forwarded call returns the cached timestamp (so the receiving instance does the duplicate-vs-new evaluation) or returns a fully classified result
+- Whether forwarding hops are bounded (e.g., at most one network hop)
 
 ---
 
 ### Failure Handling
 
-Behavior when a ring node is unreachable is **TBD**:
+The only failure path currently handled is the topology sync itself: failed fetches from the config endpoint are logged and retried on the next scheduled interval, with the last-known membership remaining in effect.
 
-- Whether the request falls back to a replica node
-- Whether requests fail open (treat as non-duplicate) or fail closed (reject)
-- How a recovering node repopulates its cache
+**Still open / TBD:**
+
+- Behavior when the owning node is unreachable for a lookup (fall back to the next node in the preference list, or fail the request)
+- Fail-open (treat as not-a-duplicate) vs fail-closed (reject the request) semantics
+- How a recovering node repopulates its cache (currently it would start cold and rely on the 300-second TTL window to naturally re-learn entries as new requests arrive)
 
 ---
 
 ### Deployment
 
-The number of instances and deployment topology for the proof of concept are **TBD**.
+The number of instances and deployment topology for the proof of concept are **TBD**. The application is a standard Spring Boot service (`com.impact.freyja.Main`) configured via `src/main/resources/application.properties`; any number of identical instances can be launched provided each is given a unique `id`/`host`/`port` and they all point at the same `freyja.ring.nodes-url`.
 
 ---
 
