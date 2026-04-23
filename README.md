@@ -1,6 +1,10 @@
 # Freyja - Crude Dynamo Ring Prototype
 
-This project now includes a minimal in-memory Dynamo-style consistent hashing ring with single-token-per-node membership.
+![logo](./Ynglingesaga.jpg)
+
+This project demonstrates a minimal in-memory Dynamo-style consistent hashing ring with single-token-per-node membership.  Similar to BigTable, DynamoDB, and Cassandra, for distribution.  We don't persist any data to disk.
+The idea is the tracking server instances in a region form a group where they have a shared memory of user sessions.
+
 
 ## What is implemented
 
