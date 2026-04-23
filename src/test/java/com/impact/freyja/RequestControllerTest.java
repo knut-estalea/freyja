@@ -17,7 +17,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * inter-node call is exercised here — that's covered indirectly by
  * RemoteClassifier and the routing logic.
  */
-@SpringBootTest
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
 class RequestControllerTest {
 
